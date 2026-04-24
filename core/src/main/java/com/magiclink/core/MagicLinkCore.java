@@ -25,17 +25,24 @@ public class MagicLinkCore {
         GeoIPService geoIPService = new GeoIPService(client, mapper);
 
         // Check for CLI commands
-        if (args.length >= 2 && "--export".equals(args[0])) {
-            String fileName = args[1];
-            log.info("Exporting nodes to {}...", fileName);
-            try {
-                java.util.List<com.magiclink.core.model.Node> nodes = nodeRepo.getAll();
-                mapper.writerWithDefaultPrettyPrinter().writeValue(new java.io.File(fileName), nodes);
-                log.info("Successfully exported {} nodes to {}", nodes.size(), fileName);
-                System.exit(0);
-            } catch (Exception e) {
-                log.error("Failed to export nodes", e);
-                System.exit(1);
+        if (args.length >= 1) {
+            String command = args[0];
+            if ("--export".equals(command)) {
+                String fileName = args.length > 1 ? args[1] : "../desktop/data/nodes.json";
+                log.info("Exporting nodes to {}...", fileName);
+                try {
+                    java.util.List<com.magiclink.core.model.Node> nodes = nodeRepo.getAll();
+                    mapper.writerWithDefaultPrettyPrinter().writeValue(new java.io.File(fileName), nodes);
+                    log.info("Successfully exported {} nodes to {}", nodes.size(), fileName);
+                    System.exit(0);
+                } catch (Exception e) {
+                    log.error("Failed to export nodes", e);
+                    System.exit(1);
+                }
+            } else if ("--update".equals(command)) {
+                log.info("CLI: Running manual source update...");
+                // Note: This would need a full setup call which is done below, 
+                // but for a quick CLI we might want to just trigger the update.
             }
         }
 
