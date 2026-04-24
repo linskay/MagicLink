@@ -12,7 +12,7 @@ import java.util.List;
 public class SingBoxConfigGenerator {
     private final ObjectMapper objectMapper;
 
-    public String generateConfig(List<Node> nodes) throws Exception {
+    public String generateConfig(List<Node> nodes, String mode) throws Exception {
         ObjectNode root = objectMapper.createObjectNode();
         
         // Outbounds
@@ -21,11 +21,10 @@ public class SingBoxConfigGenerator {
         for (Node node : nodes) {
             ObjectNode outbound = outbounds.addObject();
             outbound.put("type", node.getType());
-            outbound.put("tag", node.getId());
+            outbound.put("tag", "proxy-" + node.getId());
             outbound.put("server", node.getHost());
             outbound.put("server_port", node.getPort());
             
-            // Add specific params
             if (node.getParams() != null) {
                 node.getParams().forEach((k, v) -> {
                     if (v instanceof String) outbound.put(k, (String) v);
@@ -35,7 +34,7 @@ public class SingBoxConfigGenerator {
             }
         }
 
-        // Add default direct/block outbounds
+        // Add direct and block outbounds
         ObjectNode direct = outbounds.addObject();
         direct.put("type", "direct");
         direct.put("tag", "direct");
@@ -44,6 +43,20 @@ public class SingBoxConfigGenerator {
         ArrayNode dnsServers = dns.putArray("servers");
         ObjectNode googleDns = dnsServers.addObject();
         googleDns.put("address", "8.8.8.8");
+
+        // Routing
+        ObjectNode route = root.putObject("route");
+        ArrayNode rules = route.putArray("rules");
+
+        if ("TG".equalsIgnoreCase(mode)) {
+            ObjectNode tgRule = rules.addObject();
+            ArrayNode domains = tgRule.putArray("domain");
+            domains.add("telegram.org").add("t.me").add("telegram.me").add("tdesktop.com");
+            tgRule.put("outbound", "proxy-" + nodes.get(0).getId());
+            
+            ObjectNode defaultRule = rules.addObject();
+            defaultRule.put("outbound", "direct");
+        }
 
         return objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(root);
     }

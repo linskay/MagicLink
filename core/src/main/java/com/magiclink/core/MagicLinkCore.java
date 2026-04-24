@@ -22,13 +22,29 @@ public class MagicLinkCore {
         dbManager.initialize();
 
         SQLiteNodeRepository nodeRepo = new SQLiteNodeRepository(dbManager);
+        GeoIPService geoIPService = new GeoIPService(client, mapper);
+
+        // Check for CLI commands
+        if (args.length >= 2 && "--export".equals(args[0])) {
+            String fileName = args[1];
+            log.info("Exporting nodes to {}...", fileName);
+            try {
+                java.util.List<com.magiclink.core.model.Node> nodes = nodeRepo.getAll();
+                mapper.writerWithDefaultPrettyPrinter().writeValue(new java.io.File(fileName), nodes);
+                log.info("Successfully exported {} nodes to {}", nodes.size(), fileName);
+                System.exit(0);
+            } catch (Exception e) {
+                log.error("Failed to export nodes", e);
+                System.exit(1);
+            }
+        }
 
         // 2. Setup Pipeline
         PipelineProcessor processor = new PipelineProcessor(nodeRepo);
         processor.addStep(new Validator());
         processor.addStep(new Deduplicator());
         processor.addStep(new LatencyTester());
-        processor.addStep(new Tagger());
+        processor.addStep(new Tagger(geoIPService));
 
         // 3. Setup Fetchers and Parsers
         SourceFetcher githubRaw = new GitHubRawFetcher(client);
@@ -51,8 +67,23 @@ public class MagicLinkCore {
 
         // 5. Run initial update
         log.info("Running initial configuration update...");
-        sourceService.updateAll();
-
         log.info("MagicLink Core is active and running.");
+
+        // 6. Schedule periodic updates (every hour)
+        java.util.concurrent.ScheduledExecutorService scheduler = java.util.concurrent.Executors.newSingleThreadScheduledExecutor();
+        scheduler.scheduleAtFixedRate(() -> {
+            try {
+                log.info("Cron: Running scheduled source update...");
+                sourceService.updateAll();
+                log.info("Cron: Update completed.");
+            } catch (Exception e) {
+                log.error("Cron: Scheduled update failed", e);
+            }
+        }, 1, 1, java.util.concurrent.TimeUnit.HOURS);
+
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            log.info("Shutting down MagicLink Core...");
+            scheduler.shutdown();
+        }));
     }
 }
