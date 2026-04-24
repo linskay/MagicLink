@@ -25,25 +25,35 @@ public class MagicLinkCore {
         GeoIPService geoIPService = new GeoIPService(client, mapper);
 
         // Check for CLI commands
-        if (args.length >= 1) {
-            String command = args[0];
-            if ("--export".equals(command)) {
-                String fileName = args.length > 1 ? args[1] : "../desktop/data/nodes.json";
-                log.info("Exporting nodes to {}...", fileName);
+        boolean refresh = false;
+        String exportPath = null;
+
+        for (int i = 0; i < args.length; i++) {
+            if ("--refresh".equals(args[i])) refresh = true;
+            if ("--export".equals(args[i]) && i + 1 < args.length) exportPath = args[i+1];
+        }
+
+        if (refresh || exportPath != null) {
+            if (refresh) {
+                log.info("CLI: Running manual source update...");
+                sourceService.updateAll();
+            }
+            if (exportPath != null) {
+                log.info("CLI: Exporting nodes to {}...", exportPath);
                 try {
                     java.util.List<com.magiclink.core.model.Node> nodes = nodeRepo.getAll();
-                    mapper.writerWithDefaultPrettyPrinter().writeValue(new java.io.File(fileName), nodes);
-                    log.info("Successfully exported {} nodes to {}", nodes.size(), fileName);
-                    System.exit(0);
+                    // Filter: latency < 500ms and not null
+                    java.util.List<com.magiclink.core.model.Node> filtered = nodes.stream()
+                            .filter(n -> n.getLatency() > 0 && n.getLatency() < 500)
+                            .toList();
+                    mapper.writerWithDefaultPrettyPrinter().writeValue(new java.io.File(exportPath), filtered);
+                    log.info("Successfully exported {} filtered nodes (from total {})", filtered.size(), nodes.size());
                 } catch (Exception e) {
                     log.error("Failed to export nodes", e);
                     System.exit(1);
                 }
-            } else if ("--update".equals(command)) {
-                log.info("CLI: Running manual source update...");
-                // Note: This would need a full setup call which is done below, 
-                // but for a quick CLI we might want to just trigger the update.
             }
+            System.exit(0);
         }
 
         // 2. Setup Pipeline

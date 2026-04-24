@@ -6,7 +6,14 @@ const { app } = require('electron');
 class VpnManager {
     constructor() {
         this.process = null;
-        this.binaryPath = path.join(app.getAppPath(), 'bin', 'sing-box.exe');
+    }
+
+    getBinaryPath() {
+        const resourcesPath = app.isPackaged ? process.resourcesPath : app.getAppPath();
+        if (app.isPackaged) {
+            return path.join(resourcesPath, 'bin', 'sing-box.exe');
+        }
+        return path.join(app.getAppPath(), 'bin', 'sing-box.exe'); // In dev, we keep it in desktop/bin
     }
 
     async start(config) {
@@ -14,10 +21,15 @@ class VpnManager {
             await this.stop();
         }
 
+        const binaryPath = this.getBinaryPath();
+        if (!fs.existsSync(binaryPath)) {
+            throw new Error(`Sing-box binary not found at ${binaryPath}`);
+        }
+
         const configPath = path.join(app.getPath('userData'), 'vpn_config.json');
         fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
 
-        this.process = spawn(this.binaryPath, ['run', '-c', configPath]);
+        this.process = spawn(binaryPath, ['run', '-c', configPath]);
 
         this.process.stdout.on('data', (data) => {
             console.log(`sing-box: ${data}`);

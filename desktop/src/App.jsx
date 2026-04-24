@@ -8,13 +8,19 @@ export default function App() {
   const [vpnActive, setVpnActive] = useState(false)
   const [selectedCountry, setSelectedCountry] = useState('ALL')
   const [mode, setMode] = useState('FULL')
-  const [status, setStatus] = useState('READY') // READY, UPDATING, CONNECTING, CONNECTED
+  const [status, setStatus] = useState('INITIALIZING')
+  const [connectedNode, setConnectedNode] = useState(null)
 
   const fetchNodes = async () => {
     if (!ipcRenderer) return
     try {
       const nodeList = await ipcRenderer.invoke('nodes-list')
       setNodes(nodeList || [])
+      if (status === 'INITIALIZING' && nodeList?.length === 0) {
+        setStatus('FIRST_RUN')
+      } else if (status === 'INITIALIZING' || status === 'FIRST_RUN') {
+        setStatus('READY')
+      }
     } catch (e) {
       console.error('Failed to fetch nodes', e)
     }
@@ -22,12 +28,14 @@ export default function App() {
 
   const refreshNodes = async () => {
     if (!ipcRenderer) return
+    const prevStatus = status
     setStatus('UPDATING')
     try {
       await ipcRenderer.invoke('nodes-refresh')
       await fetchNodes()
     } catch (e) {
       console.error('Refresh failed', e)
+      alert('Failed to sync. Make sure java is installed.')
     } finally {
       setStatus('READY')
     }
@@ -35,7 +43,7 @@ export default function App() {
 
   useEffect(() => {
     fetchNodes()
-    const interval = setInterval(fetchNodes, 30000) // Refresh local list every 30s
+    const interval = setInterval(fetchNodes, 30000)
     return () => clearInterval(interval)
   }, [])
 
@@ -44,14 +52,13 @@ export default function App() {
       setStatus('READY')
       await ipcRenderer?.invoke('vpn-stop')
       setVpnActive(false)
+      setConnectedNode(null)
     } else {
-      // Filtering logic
       let filteredNodes = nodes
       if (selectedCountry !== 'ALL') {
         filteredNodes = nodes.filter(n => n.country === selectedCountry)
       }
 
-      // Sort by latency (lowest first)
       filteredNodes.sort((a, b) => (a.latency || 999) - (b.latency || 999))
 
       const node = filteredNodes[0]
@@ -61,7 +68,7 @@ export default function App() {
           outbounds: [
             {
               type: node.type,
-              tag: 'proxy',
+              tag: `proxy-${node.id}`,
               server: node.host,
               server_port: node.port,
               ...node.params
@@ -70,10 +77,11 @@ export default function App() {
           ],
           route: {
             rules: mode === 'TG' ? [
-              { domain: ['telegram.org', 't.me', 'telegram.me', 'tdesktop.com'], outbound: 'proxy' },
+              { domain: ['telegram.org', 't.me', 'telegram.me', 'tdesktop.com', 'telegra.ph'], outbound: `proxy-${node.id}` },
+              { ip_cidr: ["91.108.4.0/22", "91.108.8.0/22", "91.108.12.0/22", "91.108.16.0/22", "91.108.20.0/22", "91.108.56.0/22", "149.154.160.0/20"], outbound: `proxy-${node.id}` },
               { outbound: 'direct' }
             ] : (mode === 'PROXY' ? [
-              { outbound: 'proxy' }
+              { outbound: `proxy-${node.id}` }
             ] : [])
           }
         }
@@ -81,13 +89,14 @@ export default function App() {
         try {
           await ipcRenderer?.invoke('vpn-start', config)
           setVpnActive(true)
+          setConnectedNode(node)
           setStatus('CONNECTED')
         } catch (e) {
-          console.error('VPN Start failed', e)
+          alert(`Error: ${e.message}`)
           setStatus('READY')
         }
       } else {
-        alert('No suitable nodes found for selection.')
+        alert('No suitable nodes found. Try to Force Sync.')
       }
     }
   }
@@ -98,20 +107,23 @@ export default function App() {
     <div className='app'>
       <div className='status-bar'>
         <span className={`status-dot ${status}`}></span>
-        {status === 'UPDATING' ? 'MAGIC SYNCING...' :
-          status === 'CONNECTING' ? 'WARPING...' :
-            status === 'CONNECTED' ? 'SECURED' : `FOUND ${nodes.length} NODES`}
+        {status === 'FIRST_RUN' ? 'INITIAL MAGIC SEARCH...' :
+          status === 'UPDATING' ? 'SYNCING SOURCES...' :
+            status === 'CONNECTING' ? 'WARPING...' :
+              status === 'CONNECTED' ? `SECURED: ${connectedNode?.country} (${connectedNode?.latency}ms)` : `FOUND ${nodes.length} MAGICAL NODES`}
       </div>
 
       <h1>MagicLink</h1>
 
       <div className='magic-area'>
-        <button
+        <motion.button
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
           className={`magic-btn ${vpnActive ? 'active' : ''}`}
           onClick={toggleMagic}
         >
           {vpnActive ? 'TERMINATE MAGIC' : '🪄 INITIATE MAGIC'}
-        </button>
+        </motion.button>
       </div>
 
       <div className='modes'>
@@ -141,7 +153,9 @@ export default function App() {
         ))}
       </div>
 
-      <button className='refresh-btn' onClick={refreshNodes}>🔄 Force Sync</button>
+      <div className='footer'>
+        <button className='refresh-btn' onClick={refreshNodes}>🔄 Force Sync</button>
+      </div>
     </div>
   )
 }

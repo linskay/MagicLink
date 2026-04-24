@@ -1,11 +1,13 @@
 const { app, BrowserWindow, ipcMain } = require('electron')
 const path = require('path')
 const fs = require('fs')
-const vpnManager = require('./VpnManager.js')
 const { exec } = require('child_process')
+const vpnManager = require('./VpnManager.js')
+
+let mainWindow;
 
 function createWindow() {
-  const win = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 1000,
     height: 700,
     webPreferences: {
@@ -13,25 +15,46 @@ function createWindow() {
       contextIsolation: false
     }
   })
-  win.loadURL('http://127.0.0.1:5173')
+
+  if (app.isPackaged) {
+    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'))
+  } else {
+    mainWindow.loadURL('http://127.0.0.1:5173')
+  }
 }
 
 // IPC Handlers
 ipcMain.handle('nodes-list', async () => {
-  const nodesPath = path.join(app.getAppPath(), 'data', 'nodes.json')
+  const nodesPath = path.join(app.getPath('userData'), 'nodes.json')
   if (fs.existsSync(nodesPath)) {
-    return JSON.parse(fs.readFileSync(nodesPath, 'utf8'))
+    try {
+      return JSON.parse(fs.readFileSync(nodesPath, 'utf8'))
+    } catch (e) {
+      console.error('Failed to parse nodes.json', e)
+      return []
+    }
   }
   return []
 })
 
 ipcMain.handle('nodes-refresh', async () => {
   return new Promise((resolve, reject) => {
-    // Assuming jar is in a known location or we run via mvn for dev
-    const jarPath = path.join(app.getAppPath(), '..', 'core', 'target', 'core-1.0-SNAPSHOT.jar')
-    exec(`java -jar ${jarPath} --export`, (error, stdout, stderr) => {
+    const resourcesPath = app.isPackaged ? process.resourcesPath : app.getAppPath()
+
+    // In dev, jar is in ../core/target/. In prod, we'll put it in resources/bin/ or root
+    let jarPath;
+    if (app.isPackaged) {
+      jarPath = path.join(resourcesPath, 'bin', 'core.jar')
+    } else {
+      jarPath = path.join(app.getAppPath(), '..', 'core', 'target', 'core-1.0-SNAPSHOT.jar')
+    }
+
+    const exportPath = path.join(app.getPath('userData'), 'nodes.json')
+    const command = `java -jar "${jarPath}" --refresh --export "${exportPath}"`
+
+    exec(command, (error, stdout, stderr) => {
       if (error) {
-        console.error(`exec error: ${error}`)
+        console.error(`core error: ${error}`)
         reject(error)
         return
       }
@@ -49,3 +72,7 @@ ipcMain.handle('vpn-stop', async () => {
 })
 
 app.whenReady().then(createWindow)
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit()
+})

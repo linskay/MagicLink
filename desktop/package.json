@@ -50,11 +50,15 @@
       "target": [
         "nsis",
         "portable"
-      ]
+      ],
+      "artifactName": "MagicLink-${version}-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "MagicLink"
     }
   }
 }
